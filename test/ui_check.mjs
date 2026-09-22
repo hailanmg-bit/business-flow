@@ -106,7 +106,6 @@ try {
   });
 
   await rpc(ws, "Page.navigate", { url: BASE });
-  await sleep(9000);
 
   const ev = async (expr) =>
     (await rpc(ws, "Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true })).result?.value;
@@ -117,8 +116,23 @@ try {
 
   console.log(`\n=== 真实浏览器验证：${BASE} ===`);
   console.log("\n── 启动 ──");
+  // 首次打开要下约 320KB 的 SQLite 引擎（gzip 后），慢网下几十秒很正常，
+  // 所以这里**轮询等就绪**，不要死等一个固定秒数（死等会把正常的慢加载误报成坏页）。
+  const BOOT_WAIT = Number(process.env.BOOT_WAIT_MS || 120000);
+  const t0 = Date.now();
+  let ready = false, lastMsg = "";
+  for (let t = 0; t < BOOT_WAIT; t += 1000) {
+    const st = await ev(`(() => { const b = document.querySelector('#bootMask');
+      return { hidden: !!b && getComputedStyle(b).display === 'none',
+               msg: (document.querySelector('#bootMsg') || {}).innerText || '' }; })()`);
+    if (st && st.msg) lastMsg = st.msg;
+    if (st && st.hidden) { ready = true; break; }
+    if (t > 0 && t % 5000 === 0) console.log(`  …等待启动 ${(t / 1000).toFixed(0)}s：${lastMsg}`);
+    await sleep(1000);
+  }
+  console.log(`  启动用时 ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  check(`启动完成（${BOOT_WAIT / 1000}s 内遮罩隐藏）`, ready, lastMsg);
   check("样式已加载（侧边栏宽度生效）", (await ev(`getComputedStyle(document.querySelector('aside')).width`)) !== "auto");
-  check("启动遮罩已隐藏（数据库装载完成）", (await ev(`getComputedStyle(document.querySelector('#bootMask')).display`)) === "none");
   check("sql.js 已就绪", (await ev(`typeof window.initSqlJs`)) === "function");
   check("侧边导航 8 项", (await ev(`document.querySelectorAll('#nav a').length`)) === 8);
   check("看板已渲染", (await ev(`document.querySelector('#view').children.length`)) > 0);

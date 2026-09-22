@@ -382,8 +382,36 @@ const DEFAULT_SETTINGS = {
 
 export function defaultSettings() { return JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); }
 
-export async function initDatabase() {
+// 自己把 wasm 下下来，而不是交给 sql.js 的 locateFile。
+//
+// 原因：sql-wasm.wasm 有 640KB（gzip 传输约 320KB），首次打开必须下完才能用；
+// Emscripten 内部下载没有进度回调，用户只能对着一个不动的「正在准备…」干等，
+// 网络慢时（国内访问 GitHub Pages 经常只有几十 KB/s）会以为页面坏了。
+// 这里自己读流、报进度，顺手把 bytes 直接以 wasmBinary 交给 sql.js，省掉它再取一次。
+async function fetchWasm(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`下载数据库引擎失败：HTTP ${res.status}`);
+  const total = Number(res.headers.get("content-length") || 0) || 0;
+  if (!res.body || !res.body.getReader) return { bytes: new Uint8Array(await res.arrayBuffer()), total };
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    if (onProgress) onProgress({ got, total });
+  }
+  const bytes = new Uint8Array(got);
+  let p = 0;
+  for (const c of chunks) { bytes.set(c, p); p += c.length; }
+  return { bytes, total };
+}
+
+export async function initDatabase(opts = {}) {
   if (_db) return _db;
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   // 浏览器：用 locateFile 让 sql.js 去 ./vendor/ 取 wasm；
   // Node（仅用于自动化测试）：直接读本地 wasm 二进制，避免相对路径/网络解析问题。
   let SQL;
@@ -404,7 +432,16 @@ export async function initDatabase() {
     }
     // wasm 的地址按本模块的位置算，这样无论页面挂在域名根目录还是 /<仓库名>/ 子路径下都能取到
     const wasmBase = new URL("../vendor/", import.meta.url).href;
-    SQL = await initSqlJs({ locateFile: (f) => wasmBase + f });
+    let wasmBinary = null;
+    try {
+      const r = await fetchWasm(wasmBase + "sql-wasm.wasm", onProgress);
+      wasmBinary = r.bytes;
+    } catch (e) {
+      // 自己下载失败就退回 sql.js 自带的加载方式（至少不留死路）
+      console.warn("[db] 自行下载 wasm 失败，回退 locateFile：", e && e.message);
+    }
+    if (onProgress) onProgress({ stage: "init" });
+    SQL = wasmBinary ? await initSqlJs({ wasmBinary }) : await initSqlJs({ locateFile: (f) => wasmBase + f });
   }
   const bytes = await idbLoad();
   if (bytes && bytes.length > 100) {

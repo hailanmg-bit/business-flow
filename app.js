@@ -57,15 +57,31 @@ const STAGE_CLS = { '已完成': 'done', '进行中': 'now', '未开始': '', '�
 /* ---------- 启动 ---------- */
 (async function boot() {
   // ① 装载浏览器内数据库（sql.js）与演示素材
+  const t0 = Date.now();
   try {
-    await db.initDatabase();
+    await db.initDatabase({
+      // 首次打开要下 640KB 的 SQLite 引擎（gzip 传输约 320KB）。
+      // 网络慢时必须让用户看见"它在动"，否则会以为页面坏了。
+      onProgress: (p) => {
+        const secs = ((Date.now() - t0) / 1000).toFixed(0);
+        if (p.stage === "init") { setBootMsg('数据库引擎已就绪，正在初始化…'); return; }
+        const kb = (n) => (n / 1024).toFixed(0) + ' KB';
+        if (p.total && p.got <= p.total * 1.2) {
+          const pct = Math.min(99, Math.round((p.got / p.total) * 100));
+          setBootMsg(`正在下载数据库引擎 ${kb(p.got)} / ${kb(p.total)}（${pct}%）· 已用 ${secs} 秒`);
+        } else {
+          setBootMsg(`正在下载数据库引擎 已下载 ${kb(p.got)} · 已用 ${secs} 秒`);
+        }
+      },
+    });
     if (!db.isSeeded()) {
       setBootMsg('正在生成演示素材（客户 / 报价 / 合同 / 履约 / 提醒）…');
       seed.seedDatabase();
       db.persist();
     }
   } catch (e) {
-    setBootMsg('初始化失败：' + (e && e.message ? e.message : e));
+    setBootMsg('初始化失败：' + (e && e.message ? e.message : e)
+      + '　（若是网络问题，刷新重试即可；引擎文件约 320KB）');
     console.error('[boot]', e);
     return;
   }
