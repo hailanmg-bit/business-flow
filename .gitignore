@@ -1,0 +1,12 @@
+# 依赖与缓存
+node_modules/
+.DS_Store
+*.log
+
+# 不提交本地数据库导出（IndexedDB 是本机运行时的，不入库）
+*.sqlite
+*.db
+
+# 编辑器临时文件
+.vscode/
+.idea/
