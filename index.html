@@ -1,108 +1,84 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>业务通 · 乙方业务流程管理</title>
-  <link rel="stylesheet" href="./style.css" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>业务通 · 业务流程管理</title>
+<link rel="stylesheet" href="/style.css"/>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">业务通 <span class="brand-sub">乙方业务流程管理 · 网页版</span></div>
-    <nav class="nav">
-      <button class="nav-btn active" data-view="dashboard">看板</button>
-      <button class="nav-btn" data-view="assistant">助手</button>
-      <button class="nav-btn" data-view="settings">设置</button>
+<div id="app">
+  <aside>
+    <div class="brand">
+      <div class="logo">通</div>
+      <div><b>业务通</b><span>业务流程管理 Agent</span></div>
+    </div>
+    <nav id="nav">
+      <a data-v="process">业务进程<span class="dot" id="navProcess" style="display:none">0</span></a>
+      <a data-v="customers">客户</a>
+      <a data-v="quotations">报价</a>
+      <a data-v="contracts">合同</a>
+      <a data-v="templates">模板库</a>
+      <a data-v="reminders">提醒<span class="dot" id="navRemind" style="display:none">0</span></a>
+      <a data-v="assistant">智能助手</a>
+      <a data-v="settings">设置</a>
     </nav>
-    <div class="op" id="op-tag"></div>
-  </header>
+    <div class="side-foot">
+      <div class="muted" style="padding:0 10px 6px">当前操作人</div>
+      <select id="opSwitch" style="font-size:12.5px"></select>
+    </div>
+  </aside>
 
   <main>
-    <!-- 看板 -->
-    <section id="view-dashboard" class="view active">
-      <div id="summary" class="summary"></div>
-      <div class="filters">
-        <input id="f-keyword" type="text" placeholder="搜索客户 / 合同 / 编号" />
-        <select id="f-stage">
-          <option value="">全部阶段</option>
-          <option value="报价">报价</option>
-          <option value="签约">签约</option>
-          <option value="交付">交付</option>
-          <option value="验收">验收</option>
-          <option value="开票">开票</option>
-          <option value="回款">回款</option>
-          <option value="完结">完结</option>
-        </select>
-        <select id="f-customer"></select>
-        <label class="chk"><input id="f-stagnant" type="checkbox" /> 仅看停滞</label>
-        <button id="f-refresh" class="btn ghost">刷新</button>
-      </div>
-      <div id="process-list" class="process-list"></div>
-    </section>
-
-    <!-- 详情 -->
-    <section id="view-detail" class="view">
-      <button class="btn ghost back" data-view="dashboard">← 返回看板</button>
-      <div id="detail-content"></div>
-    </section>
-
-    <!-- 助手 -->
-    <section id="view-assistant" class="view">
-      <div id="ctx-chip" class="ctx-chip hidden"></div>
-      <div id="chat" class="chat"></div>
-      <div class="suggest" id="suggest"></div>
-      <div class="composer">
-        <textarea id="chat-input" rows="2" placeholder="用一句话查数据、录记录、推进度、问条款…（回车发送，Shift+回车换行）"></textarea>
-        <button id="chat-send" class="btn primary">发送</button>
-      </div>
-    </section>
-
-    <!-- 设置 -->
-    <section id="view-settings" class="view">
-      <div class="card">
-        <h2>DeepSeek API Key</h2>
-        <p class="muted">Key 仅保存在你浏览器的 localStorage，只发往 api.deepseek.com，不经过任何服务器。换设备/清缓存需重新填写。</p>
-        <input id="set-key" type="password" placeholder="sk-..." />
-        <div class="row">
-          <input id="set-model" type="text" placeholder="模型名（默认 deepseek-chat）" />
-          <button id="set-test" class="btn">测试连接</button>
-        </div>
-        <div id="conn-result" class="muted"></div>
-      </div>
-      <div class="card">
-        <h2>能力开关</h2>
-        <label class="switch"><input id="set-ai" type="checkbox" /> 启用 AI 问答</label>
-        <label class="switch"><input id="set-qa" type="checkbox" /> 启用条款问答</label>
-      </div>
-      <div class="card danger">
-        <h2>数据</h2>
-        <p class="muted">数据保存在本机浏览器的 IndexedDB（随仓库的 sql.js 在本地运行，不上传）。清空会删除全部业务数据并恢复演示素材。</p>
-        <button id="set-reset" class="btn danger">清空并恢复演示数据</button>
-      </div>
-      <div class="card">
-        <h2>隐私说明</h2>
-        <p class="muted">本应用为纯前端网页：数据库（SQLite/wasm）在浏览器内运行，AI 调用由浏览器直连 DeepSeek。没有后端服务器，业务数据不会离开你的设备；唯一出网请求是带 Key 的模型调用。如担心 Key 泄露，可随时在上方更换或删除。</p>
-      </div>
-    </section>
+    <header>
+      <h1 id="pageTitle">业务进程</h1>
+      <span class="sub" id="pageSub"></span>
+      <span class="grow"></span>
+      <span id="headExtra"></span>
+    </header>
+    <div class="content" id="view"></div>
   </main>
+</div>
 
-  <!-- 首次设置引导 -->
-  <div id="setup" class="modal-mask hidden">
-    <div class="modal">
-      <h2>欢迎使用业务通（网页版）</h2>
-      <p>这是一个完全在本机运行的乙方业务流程管理工具。要启用 AI 助手，请填入你的 <b>DeepSeek API Key</b>（在 <a href="https://platform.deepseek.com" target="_blank" rel="noopener">platform.deepseek.com</a> 获取）。</p>
-      <p class="muted">Key 仅存于本浏览器，不会上传到任何服务器。也可先「跳过」，之后在设置页填写。</p>
-      <input id="setup-key" type="password" placeholder="sk-..." />
-      <div class="row">
-        <button id="setup-save" class="btn primary">保存并进入</button>
-        <button id="setup-skip" class="btn ghost">跳过</button>
-      </div>
-      <div id="setup-err" class="err"></div>
-    </div>
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+  <header>
+    <h1 id="drawerTitle">详情</h1>
+    <span class="grow"></span>
+    <button class="ghost" onclick="closeDrawer()">关闭</button>
+  </header>
+  <div class="content" id="drawerBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 启动遮罩：本地数据库（SQLite/wasm）+ 演示素材装载期间显示 -->
+<div class="bootmask" id="bootMask">
+  <div class="bootbox">
+    <div class="logo lg">通</div>
+    <div class="bootttl">业务通 · 正在准备演示数据…</div>
+    <div class="muted" id="bootMsg">首次打开需要装载本地数据库引擎与演示素材，约需数秒。</div>
   </div>
+</div>
 
-  <div id="toast" class="toast hidden"></div>
+<!-- 首次进入：AI Key 引导（网页版没有后端，模型 Key 由使用者自己提供） -->
+<div class="scrim on" id="keyScrim" style="display:none"></div>
+<div class="drawer on" id="keyBox" style="display:none;left:auto;right:0;max-width:520px;width:100%">
+  <header><h1>接入 AI 助手</h1><span class="grow"></span></header>
+  <div class="content">
+    <p>这是<b>纯前端网页版</b>：数据库在浏览器内运行，AI 调用由浏览器直连 DeepSeek。<b>没有后端服务器</b>，你的业务数据不会离开这台设备。</p>
+    <p>要启用智能助手（自然语言查询 / 录入 / 推进 / 条款问答），请填入你的 <b>DeepSeek API Key</b>（在 platform.deepseek.com 获取）。</p>
+    <div class="field"><label class="f">DeepSeek API Key</label><input id="keyInput" type="password" placeholder="sk-..."/></div>
+    <div class="field"><label class="f">模型</label><input id="keyModel" type="text" placeholder="deepseek-chat"/></div>
+    <div class="muted">Key 只保存在本浏览器 localStorage，仅发往 api.deepseek.com；换设备或清缓存需重新填写。</div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="keySave">保存并进入</button>
+      <button id="keySkip">先跳过，只看演示数据</button>
+    </div>
+    <div class="muted" id="keyErr" style="color:var(--red-ink);margin-top:8px"></div>
+  </div>
+</div>
 
-  <script type="module" src="./app.js"></script>
+<script type="module" src="./app.js"></script>
 </body>
 </html>

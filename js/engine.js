@@ -45,7 +45,7 @@ function aiFailureHint(e) {
 
 const AMOUNT_RE = /^\d+(\.\d{1,2})?$/;
 const REF_SLOTS = new Set(["customer_ref", "contract_ref", "quotation_ref", "record_ref", "template_ref", "operator_ref"]);
-const UPDATABLE = {
+export const UPDATABLE = {
   contract: ["name", "contract_type", "amount", "amount_type", "sign_date", "service_start_date",
     "service_end_date", "planned_delivery_date", "auto_renewal", "payment_terms", "remark"],
   customer: ["name", "credit_code", "contact_name", "contact_phone", "address", "invoice_title",
@@ -446,7 +446,7 @@ function _genContractBody(name, custName, slots, no) {
   return `【合同名称】${name}\n【客户】${custName}\n【服务期】${slots.service_start_date} 至 ${slots.service_end_date}\n【金额】${slots.amount || "不适用"} 元\n【合同编号】${no}\n\n（本正文由系统依据合同要素生成，可编辑后创建新版本）`;
 }
 
-function _advance(obj, oid, to, op_id, remark, source) {
+export function _advance(obj, oid, to, op_id, remark, source) {
   const table = obj === "CONTRACT" ? "contract" : "quotation";
   const cur = (db.one(`SELECT status FROM ${table} WHERE id=?`, [oid]) || {}).status;
   if (!TRANSITIONS[obj][cur] || !TRANSITIONS[obj][cur].includes(to)) throw new Error(`不允许从「${cur}」推进到「${to}」`);
@@ -456,7 +456,7 @@ function _advance(obj, oid, to, op_id, remark, source) {
   if (obj === "CONTRACT" && (to === "已到期" || to === "已终止")) db.run("UPDATE contract SET is_archived=1 WHERE id=?", [oid]);
 }
 
-function _bump(v) {
+export function _bump(v) {
   const m = String(v || "V1.0").match(/V(\d+)\.(\d+)/);
   if (!m) return "V1.1";
   return `V${m[1]}.${parseInt(m[2], 10) + 1}`;
