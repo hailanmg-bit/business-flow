@@ -409,6 +409,29 @@ async function fetchWasm(url, onProgress) {
   return { bytes, total };
 }
 
+// 期望的 wasm 字节数：用来判断拿到的确实是同一个构建（防止 CDN 缓存到旧版本、与本地 glue 错配）。
+// **升级 vendor/sql-wasm.wasm 时必须同步改这个数** —— 不改也不会出错，只是会退回同源加载（变慢）。
+const WASM_BYTES = 655300;
+
+/**
+ * 引擎文件的候选来源，按顺序尝试。
+ *
+ * 为什么需要这个：GitHub Pages 在国内访问极慢（实测同一文件 16 KB/s vs jsdelivr 260 KB/s），
+ * 而 640KB 的 wasm 占首屏体积的 83% —— 它慢，整个页面就慢到像坏了。
+ * 但 jsdelivr 的 @main 有 12 小时边缘缓存，所以拿到后要用字节数校验，不匹配就退回同源。
+ * 非 github.io 环境（本地开发）只用同源，不引入外部依赖。
+ */
+function wasmSources(localUrl) {
+  const out = [];
+  const m = typeof location !== "undefined" && location.hostname.match(/^([^.]+)\.github\.io$/);
+  const repo = typeof location !== "undefined" ? location.pathname.split("/").filter(Boolean)[0] : null;
+  if (m && repo) {
+    out.push({ url: `https://cdn.jsdelivr.net/gh/${m[1]}/${repo}@main/vendor/sql-wasm.wasm`, label: "jsdelivr CDN" });
+  }
+  out.push({ url: localUrl, label: "本站" });
+  return out;
+}
+
 export async function initDatabase(opts = {}) {
   if (_db) return _db;
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
@@ -433,12 +456,18 @@ export async function initDatabase(opts = {}) {
     // wasm 的地址按本模块的位置算，这样无论页面挂在域名根目录还是 /<仓库名>/ 子路径下都能取到
     const wasmBase = new URL("../vendor/", import.meta.url).href;
     let wasmBinary = null;
-    try {
-      const r = await fetchWasm(wasmBase + "sql-wasm.wasm", onProgress);
-      wasmBinary = r.bytes;
-    } catch (e) {
-      // 自己下载失败就退回 sql.js 自带的加载方式（至少不留死路）
-      console.warn("[db] 自行下载 wasm 失败，回退 locateFile：", e && e.message);
+    for (const src of wasmSources(wasmBase + "sql-wasm.wasm")) {
+      try {
+        const r = await fetchWasm(src.url, onProgress);
+        if (r.bytes.length !== WASM_BYTES) {
+          throw new Error(`引擎字节数不符（期望 ${WASM_BYTES}，实得 ${r.bytes.length}），可能是 CDN 缓存了旧版本`);
+        }
+        wasmBinary = r.bytes;
+        break;
+      } catch (e) {
+        // 换下一个来源。全部失败时 wasmBinary 仍为 null，退回 sql.js 自带加载（至少不留死路）
+        console.warn(`[db] 从「${src.label}」获取数据库引擎失败：`, e && e.message);
+      }
     }
     if (onProgress) onProgress({ stage: "init" });
     SQL = wasmBinary ? await initSqlJs({ wasmBinary }) : await initSqlJs({ locateFile: (f) => wasmBase + f });
