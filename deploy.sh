@@ -8,7 +8,10 @@
 # 用法：./deploy.sh "这次改了什么"
 set -u
 cd "$(dirname "$0")"
-REPO="hailanmg-bit/business-flow"
+OWNER="hailanmg-bit"
+NAME="business-flow"
+REPO="${OWNER}/${NAME}"
+SITE="https://${OWNER}.github.io/${NAME}"
 MSG="${1:-更新}"
 
 echo "① 提交并推送…"
@@ -27,10 +30,10 @@ sleep 60
 
 echo "④ 验证线上资源："
 for p in / /app.js /js/db.js /vendor/sql-wasm.wasm; do
-  printf "   %s  %s\n" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://hailanmg-bit.github.io/${REPO}${p}")" "$p"
+  printf "   %s  %s\n" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "${SITE}${p}")" "$p"
 done
 
 echo
-echo "完成。打开：https://hailanmg-bit.github.io/${REPO}/"
-echo "建议再跑一次真浏览器验证："
-echo "  node test/ui_check.mjs https://hailanmg-bit.github.io/${REPO}/"
+echo "完成。打开：${SITE}/"
+echo "建议再跑一次真浏览器验证（会在子路径下逐页点一遍并截图）："
+echo "  node test/ui_check.mjs ${SITE}/"
