@@ -8,7 +8,7 @@ import * as db from './js/db.js';
 import * as seed from './js/seed.js';
 import * as AI from './js/ai.js';
 import {
-  apiLocal, uploadAttachments, importScans as importScansApi,
+  apiLocal, importScans as importScansApi,
   downloadAttachment, exportQuotationDocument, exportContractDocument,
   exportLedger, exportBackup,
 } from './js/api.js';
