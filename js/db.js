@@ -384,7 +384,6 @@ export function defaultSettings() { return JSON.parse(JSON.stringify(DEFAULT_SET
 
 export async function initDatabase() {
   if (_db) return _db;
-  const initSqlJs = (await import("../vendor/sql-wasm.js")).default;
   // 浏览器：用 locateFile 让 sql.js 去 ./vendor/ 取 wasm；
   // Node（仅用于自动化测试）：直接读本地 wasm 二进制，避免相对路径/网络解析问题。
   let SQL;
@@ -392,9 +391,20 @@ export async function initDatabase() {
     const { readFileSync } = await import("fs");
     const { fileURLToPath } = await import("url");
     const wasmPath = fileURLToPath(new URL("./../vendor/sql-wasm.wasm", import.meta.url));
+    const initSqlJs = (await import("../vendor/sql-wasm.js")).default;
     SQL = await initSqlJs({ wasmBinary: readFileSync(wasmPath) });
   } else {
-    SQL = await initSqlJs({ locateFile: (f) => "./vendor/" + f });
+    // vendor/sql-wasm.js 是 UMD 包：它的三条导出分支分别要求 exports/module/define 存在，
+    // 在浏览器里用 import() 按 ES Module 解析时三者都没有，**一个导出都不会产生**，
+    // 所以这里拿不到 default。改由 index.html 用传统 <script> 标签加载它 ——
+    // 传统脚本里顶层 `var initSqlJs` 会落到 window 上，此处直接取全局。
+    const initSqlJs = globalThis.initSqlJs;
+    if (typeof initSqlJs !== "function") {
+      throw new Error("sql.js 未加载：请确认 index.html 中已用 <script src=\"./vendor/sql-wasm.js\"> 引入");
+    }
+    // wasm 的地址按本模块的位置算，这样无论页面挂在域名根目录还是 /<仓库名>/ 子路径下都能取到
+    const wasmBase = new URL("../vendor/", import.meta.url).href;
+    SQL = await initSqlJs({ locateFile: (f) => wasmBase + f });
   }
   const bytes = await idbLoad();
   if (bytes && bytes.length > 100) {
@@ -425,34 +435,51 @@ export function persist() {
   idbSave(bytes);
 }
 
-function idbSave(bytes) {
+// 打开（必要时创建）持久化用的 IndexedDB。
+//
+// 坑：`indexedDB.open(name)` 不带版本号、又没有 onupgradeneeded 时，
+// 全新浏览器里会**建出一个没有任何对象存储的空库**，紧接着 transaction(store) 抛
+// NotFoundError；而这个 throw 发生在 onsuccess 回调里，Promise 的 resolve 永远不会执行，
+// 于是调用方（boot）永久挂起、页面卡在启动遮罩上。
+// 所以这里必须显式给版本号并在 onupgradeneeded 里建好对象存储。
+function openIdb() {
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open(IDB_NAME);
-      req.onsuccess = () => {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
         const dbh = req.result;
-        const tx = dbh.transaction(IDB_STORE, "readwrite");
-        tx.objectStore(IDB_STORE).put(bytes, IDB_KEY);
-        tx.oncomplete = () => { dbh.close(); resolve(); };
-        tx.onerror = () => resolve();
+        if (!dbh.objectStoreNames.contains(IDB_STORE)) dbh.createObjectStore(IDB_STORE);
       };
-      req.onerror = () => resolve();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch { resolve(null); }
+  });
+}
+
+function idbSave(bytes) {
+  return new Promise(async (resolve) => {
+    try {
+      const dbh = await openIdb();
+      if (!dbh) return resolve();
+      const tx = dbh.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(bytes, IDB_KEY);
+      tx.oncomplete = () => { dbh.close(); resolve(); };
+      tx.onerror = () => { dbh.close(); resolve(); };
+      tx.onabort = () => { dbh.close(); resolve(); };
     } catch { resolve(); }
   });
 }
 
 function idbLoad() {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     try {
-      const req = indexedDB.open(IDB_NAME);
-      req.onsuccess = () => {
-        const dbh = req.result;
-        const tx = dbh.transaction(IDB_STORE, "readonly");
-        const g = tx.objectStore(IDB_STORE).get(IDB_KEY);
-        g.onsuccess = () => { dbh.close(); resolve(g.result || null); };
-        g.onerror = () => { dbh.close(); resolve(null); };
-      };
-      req.onerror = () => resolve(null);
+      const dbh = await openIdb();
+      if (!dbh) return resolve(null);
+      const tx = dbh.transaction(IDB_STORE, "readonly");
+      const g = tx.objectStore(IDB_STORE).get(IDB_KEY);
+      g.onsuccess = () => { dbh.close(); resolve(g.result || null); };
+      g.onerror = () => { dbh.close(); resolve(null); };
     } catch { resolve(null); }
   });
 }

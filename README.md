@@ -69,6 +69,7 @@ python3 -m http.server 8080     # 或：npx serve .
 ├── style.css           样式
 ├── app.js              前端控制器（与本地版 app/web/app.js 同源，仅把数据源换成 js/api.js）
 ├── vendor/             sql.js（SQLite wasm），随仓库托管
+├── test/               测试：api_test.mjs（逻辑层）/ validate.mjs（引擎层）/ ui_check.mjs（真实浏览器）
 └── js/
     ├── db.js           数据访问层（建库 / 持久化 / 金额整数分运算）
     ├── api.js          ★ 浏览器本地 API 层：server.py 的 59 个路由
@@ -88,13 +89,30 @@ python3 -m http.server 8080     # 或：npx serve .
 
 ## 测试
 
+分两层，**两层都要跑**：
+
 ```bash
-node test/api_test.mjs     # 端到端：59 个接口 + 三级闸门 + 附件 + 文档导出，共 104 项断言
-node test/validate.mjs     # 引擎层：录入 / 推进 / 撤销 / 口径追问
+# ① 逻辑层（Node，秒级）：59 个接口 + 三级闸门 + 附件 + 文档导出，104 项断言
+node test/api_test.mjs
+node test/validate.mjs          # 引擎层：录入 / 推进 / 撤销 / 口径追问
+
+# ② 真实浏览器层（本地 Chrome）：页面能不能真的打开、点得动
+mkdir -p /tmp/site/business-flow
+cp -R app.js index.html style.css js vendor /tmp/site/business-flow/
+python3 -m http.server 8098 --directory /tmp/site      # 终端 A
+node test/ui_check.mjs http://127.0.0.1:8098/business-flow/   # 终端 B，34 项断言 + 截图 /tmp/ui-*.png
 ```
 
-没有可用的无头浏览器，所以测试用桩替代浏览器全局（`localStorage` / `IndexedDB` / `fetch` / `document`），
-直接 `import` 真实模块跑一遍 —— 逻辑层是真实执行，不是模拟。
+逻辑层用桩替代浏览器全局（`localStorage` / `IndexedDB` / `fetch` / `document`），直接 `import` 真实模块跑。
+
+**为什么两层都要跑**：逻辑层全绿**不等于**浏览器里能用。已经栽过两个只有真浏览器才看得见的跟头 ——
+
+1. `vendor/sql-wasm.js` 是 UMD 包，用 `import()` 按 ES Module 解析时它的三条导出分支都不命中，
+   拿不到 `initSqlJs`，数据库根本起不来（而 Node 按 CommonJS 处理它，测试却是绿的）；
+2. `index.html` 里写了绝对路径 `/style.css`，本地起在根路径恰好能命中，挂到 `/<仓库名>/` 下就 404，样式全丢。
+
+所以 `ui_check.mjs` 特意**在子路径下**跑（模拟 GitHub Pages），根路径测法会漏掉绝对路径问题。
+凡动到 `index.html`、模块加载方式、资源路径，都要跑一遍它。
 
 ## 与本地运行版的关系
 

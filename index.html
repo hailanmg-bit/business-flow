@@ -4,7 +4,9 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>业务通 · 业务流程管理</title>
-<link rel="stylesheet" href="/style.css"/>
+<!-- 路径一律用相对路径：本页会被挂在 /<仓库名>/ 子路径下，绝对路径会 404（曾因此丢样式） -->
+<link rel="icon" href="data:,"/><!-- 空图标：避免浏览器自动请求 /favicon.ico 报 404 -->
+<link rel="stylesheet" href="./style.css"/>
 </head>
 <body>
 <div id="app">
@@ -79,6 +81,9 @@
   </div>
 </div>
 
+<!-- sql.js（UMD 包）：必须用传统 <script> 加载。
+     用 import() 按 ES Module 解析时它的三条导出分支都不会命中，拿不到 initSqlJs。 -->
+<script src="./vendor/sql-wasm.js"></script>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
