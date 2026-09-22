@@ -54,7 +54,37 @@ python3 -m http.server 8080     # 或：npx serve .
 > 注意：GitHub 免费版**只允许公开仓库开启 Pages**。仓库公开不影响数据隐私 —— 你的业务数据只在自己浏览器的 IndexedDB 里，
 > 访问者各自填各自的 Key、各自存各自的数据。
 
-## 隐私
+## 性能：为什么代码走 CDN
+
+首屏要下 **约 460KB**，其中 640KB 的 SQLite 引擎（wasm）占 83%。**GitHub Pages 在国内访问极慢**，
+实测同一时刻：
+
+| 来源 | 同一个 640KB 引擎 | 效果 |
+|---|---|---|
+| GitHub Pages | 41 秒 | 单模块延迟 2–9 秒，18 个 JS 模块串起来首屏近 30 秒 |
+| raw.githubusercontent | 60 秒超时 | — |
+| jsdelivr（代理同一仓库） | **1.4 秒** | 首屏 **5 秒**（缓存热时） |
+
+所以 `index.html` 的引导脚本会**先探测 jsdelivr 是否可用，再决定整套代码从哪加载**：
+能用就走 CDN，不能用就原样走本站（本地 `localhost` 只用本站，不引入外部依赖）。
+探测后一次性决定 base，不做「加载到一半再回退」—— 否则同一模块会被加载两遍、`boot()` 跑两次。
+
+引擎另有一层保险：拿到后校验字节数（`WASM_BYTES`），不匹配就退回同源 ——
+防止 jsdelivr 的 `@main` 边缘缓存给到旧版本，与本地 glue 错配。
+
+> **升级 `vendor/sql-wasm.wasm` 时，记得同步改 `js/db.js` 里的 `WASM_BYTES`**。
+> 不改也不会出错，只是会退回同源加载（变慢）。
+
+### 发布：用 `./deploy.sh`，不要直接 `git push`
+
+```bash
+./deploy.sh "这次改了什么"
+```
+
+它做三件事：推送 → **通知 jsdelivr 清缓存** → 等 Pages 重建并验证资源。
+中间那步不能省：jsdelivr 的 `@main` 有约 12 小时边缘缓存，不清的话你 push 完自己要等半天才看到新版。
+
+
 
 - **API Key**：只存本机 `localStorage`（键名 `bizflow_deepseek_key`），只发往 `api.deepseek.com`，不经过任何中间服务器。
 - **业务数据**：只存本机 IndexedDB（含上传的附件字节），不上传任何地方。清浏览器数据会丢失，请自行导出备份。
@@ -68,6 +98,7 @@ python3 -m http.server 8080     # 或：npx serve .
 ├── index.html          入口（含启动遮罩与首次 Key 引导）
 ├── style.css           样式
 ├── app.js              前端控制器（与本地版 app/web/app.js 同源，仅把数据源换成 js/api.js）
+├── deploy.sh           发布脚本：推送 + 清 jsdelivr 缓存 + 验证线上
 ├── vendor/             sql.js（SQLite wasm），随仓库托管
 ├── test/               测试：api_test.mjs（逻辑层）/ validate.mjs（引擎层）/ ui_check.mjs（真实浏览器）
 └── js/
