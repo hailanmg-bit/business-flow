@@ -81,9 +81,58 @@
   </div>
 </div>
 
-<!-- sql.js（UMD 包）：必须用传统 <script> 加载。
-     用 import() 按 ES Module 解析时它的三条导出分支都不会命中，拿不到 initSqlJs。 -->
-<script src="./vendor/sql-wasm.js"></script>
-<script type="module" src="./app.js"></script>
+<script type="module">
+/* 引导脚本。
+ *
+ * 为什么不写静态的 <script src>：本站挂在 GitHub Pages 上，国内访问它的静态资源极慢
+ * （实测：app.js 22KB 要 5.3 秒，js/docs.js 6.8KB 要 8.6 秒，18 个模块串起来首屏近 30 秒；
+ *   同一时刻从 jsdelivr 取 322KB 的 wasm 只要 1.4 秒）。
+ * 所以先探测 CDN（jsdelivr 代理同一个仓库），能用就整套代码都从 CDN 加载，否则原样用本站。
+ *
+ * 关键：先探测、再决定，不做「加载到一半再回退」—— 否则同一模块会被加载两遍、boot 跑两次。
+ *
+ * 另外 vendor/sql-wasm.js 是 UMD 包，必须用传统 <script> 加载
+ * （用 import() 时它的三条导出分支都不命中，拿不到 initSqlJs），所以这里手动注入 script 标签。
+ */
+const CDN = "https://cdn.jsdelivr.net/gh/hailanmg-bit/business-flow@main/";
+const setBootMsg = (t) => { const el = document.getElementById("bootMsg"); if (el) el.textContent = t; };
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("加载失败：" + url));
+    document.head.appendChild(s);
+  });
+}
+
+async function pickBase() {
+  // 只在 GitHub Pages 上用 CDN；本地起服务（localhost）走本站，不引入外部依赖
+  if (!/(^|\.)github\.io$/.test(location.hostname)) return "./";
+  try {
+    const r = await fetch(CDN + "js/db.js", { method: "HEAD", cache: "no-store" });
+    if (r.ok) return CDN;
+  } catch (e) { console.warn("[boot] CDN 不可用，改用本站：", e && e.message); }
+  return "./";
+}
+
+try {
+  const base = await pickBase();
+  if (typeof globalThis.initSqlJs !== "function") {
+    let ok = false;
+    for (const u of [base + "vendor/sql-wasm.js", "./vendor/sql-wasm.js"]) {
+      try { await loadScript(u); } catch (e) { console.warn(e); }
+      ok = typeof globalThis.initSqlJs === "function";
+      if (ok) break;
+    }
+    if (!ok) throw new Error("数据库引擎脚本加载失败");
+  }
+  await import(base + "app.js");
+} catch (e) {
+  setBootMsg("加载失败：" + (e && e.message ? e.message : e) + "　刷新重试即可");
+  console.error("[boot]", e);
+}
+</script>
 </body>
 </html>
